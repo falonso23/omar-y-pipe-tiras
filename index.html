@@ -1,0 +1,65 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Omar y Pipe</title>
+<!-- Página del sitio público de las tiras: cada tira con sus 4 viñetas y el collage, el texto para Instagram
+     y un zip por tira o por día (imágenes + texto.txt) para subir a mano. La copia publicar.py. -->
+<style>
+body{margin:0;padding:24px 16px;background:#f4efe6;color:#222;font:16px/1.4 system-ui,sans-serif}
+main{max-width:1200px;margin:auto} header{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:24px}
+h1{margin:0} section{margin-bottom:56px} h2{margin:0 0 4px} p{margin:0 0 12px;color:#555} a{color:#2a5d8f}
+.tira{display:grid;grid-template-columns:repeat(5,1fr);gap:8px} .tira img{width:100%;border-radius:6px;display:block}
+textarea{width:100%;box-sizing:border-box;height:6.5em;margin:12px 0 8px;font:inherit;padding:8px;border:1px solid #ccc;border-radius:6px}
+button,select{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid #bbb;background:#fff;cursor:pointer;margin-right:8px}
+@media (max-width:700px){.tira{grid-template-columns:repeat(2,1fr)}}
+</style>
+<main>
+<header><h1>Omar y Pipe</h1><select id="dia" aria-label="Día"></select><button id="todo">Bajar el día entero</button></header>
+<div id="tiras"></div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => s.replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const imagenes = t => [...t.vinetas.map(v => v.url), t.collage];
+
+// Cada tira va en su carpeta, con las imágenes numeradas en el orden del carrusel y el texto para pegar.
+async function sumar(zip, t, n) {
+  const carpeta = zip.folder(`tira-${n}`);
+  await Promise.all(imagenes(t).map(async (u, k) =>
+    carpeta.file(`${k + 1}-${u.split("/").pop()}`, await (await fetch(u)).blob())));
+  carpeta.file("texto.txt", t.instagram);
+}
+async function bajar(nombre, tiras, b) {
+  const antes = b.textContent; b.disabled = true; b.textContent = "Armando…";
+  const zip = new JSZip();
+  await Promise.all(tiras.map(([t, n]) => sumar(zip, t, n)));
+  const a = Object.assign(document.createElement("a"), {href: URL.createObjectURL(await zip.generateAsync({type: "blob"})),
+                                                       download: nombre});
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  b.disabled = false; b.textContent = antes;
+}
+
+async function mostrar(fecha) {
+  const d = await (await fetch(`dias/${fecha}.json`)).json();
+  $("#tiras").innerHTML = d.tiras.map((t, i) => `<section>
+    <h2>${i + 1}. ${esc(t.titulo)}</h2>
+    <p><a href="${esc(t.noticia.url)}">${esc(t.noticia.titular)}</a> · ${esc(t.noticia.medio)}</p>
+    <div class="tira">${imagenes(t).map((u, k) => `<a href="${u}" download><img src="${u}" loading="lazy"
+      alt="${esc(k < 4 ? t.vinetas[k].texto : "Las cuatro viñetas juntas")}"></a>`).join("")}</div>
+    <textarea readonly>${esc(t.instagram)}</textarea>
+    <button data-i="${i}" data-a="copiar">Copiar texto</button><button data-i="${i}" data-a="zip">Bajar zip</button>
+  </section>`).join("");
+  $("#tiras").onclick = async e => {
+    const b = e.target.closest("button"); if (!b) return;
+    const i = +b.dataset.i, t = d.tiras[i];
+    if (b.dataset.a === "copiar") { await navigator.clipboard.writeText(t.instagram); b.textContent = "Copiado"; return; }
+    bajar(`omar-y-pipe-${d.fecha}-tira-${i + 1}.zip`, [[t, i + 1]], b);
+  };
+  $("#todo").onclick = e => bajar(`omar-y-pipe-${d.fecha}.zip`, d.tiras.map((t, i) => [t, i + 1]), e.target);
+}
+
+fetch("dias.json").then(r => r.json()).then(dias => {
+  $("#dia").innerHTML = dias.map(f => `<option>${f}</option>`).join("");
+  $("#dia").onchange = e => mostrar(e.target.value);
+  mostrar(dias[0]);
+});
+</script>
